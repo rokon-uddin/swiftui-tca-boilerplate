@@ -1,15 +1,14 @@
 //
-//  __cookiecutter_app_name__UITestsLaunchTests.swift
+//  {{cookiecutter.app_name}}UITestsLaunchTests.swift
 //  {{cookiecutter.app_name}}UITests
 //
-//  Created by {{ cookiecutter.creator }} on {% now 'utc', '%d/%m/%Y' %}.
+//  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
 //  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
 //
 
 import XCTest
 
-#warning("Please rename to your app name")
-class AppUITestsLaunchTests: XCTestCase {
+class {{cookiecutter.app_name}}UITestsLaunchTests: XCTestCase {
 
   override class var runsForEachTargetApplicationUIConfiguration: Bool {
     true
