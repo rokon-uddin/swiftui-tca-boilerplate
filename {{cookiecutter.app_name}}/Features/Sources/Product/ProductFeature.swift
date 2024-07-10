@@ -1,8 +1,8 @@
 //
-//  AppFeature.swift
+//  ProductFeature.swift
 //  Features
 //
-//  Created by {{ cookiecutter.creator }} on {% now 'utc', '%d/%m/%Y' %}.
+//  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
 //  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
 //
 
@@ -11,7 +11,7 @@ import ComposableArchitecture
 import Counter
 import Domain
 
-public struct AppFeature: FeatureReducer {
+public struct ProductFeature: FeatureReducer {
 
   @Dependency(\.appClient) var appClient
 
@@ -92,9 +92,7 @@ public struct AppFeature: FeatureReducer {
     }
   }
 
-  public func reduce(into state: inout State, internalAction: InternalAction)
-    -> Effect<Action>
-  {
+  public func reduce(into state: inout State, internalAction: InternalAction) -> Effect<Action> {
     switch internalAction {
     case let .productResponse(.success(product)):
       state.product = product

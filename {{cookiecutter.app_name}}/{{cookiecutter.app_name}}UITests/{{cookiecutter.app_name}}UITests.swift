@@ -1,15 +1,14 @@
 //
-//  __cookiecutter_app_name__UITests.swift
+//  {{cookiecutter.app_name}}UITests.swift
 //  {{cookiecutter.app_name}}UITests
 //
-//  Created by {{ cookiecutter.creator }} on {% now 'utc', '%d/%m/%Y' %}.
+//  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
 //  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
 //
 
 import XCTest
 
-#warning("Please rename to your app name")
-class AppUITests: XCTestCase {
+class {{cookiecutter.app_name}}UITests: XCTestCase {
 
   override func setUpWithError() throws {
     // Put setup code here. This method is called before the invocation of each test method in the class.

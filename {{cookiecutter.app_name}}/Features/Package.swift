@@ -8,8 +8,8 @@ let package = Package(
   platforms: [.macOS(.v12), .iOS(.v16)],
   products: [
     .library(
-      name: "App",
-      targets: ["App"]
+      name: "Product",
+      targets: ["Product"]
     ),
 
     .library(
@@ -28,7 +28,7 @@ let package = Package(
   ],
   targets: [
     .target(
-      name: "App",
+      name: "Product",
       dependencies: [
         "Counter",
         .product(name: "Common", package: "Common"),

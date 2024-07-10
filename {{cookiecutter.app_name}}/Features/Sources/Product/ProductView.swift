@@ -1,8 +1,8 @@
 //
-//  AppView.swift
+//  ProductView.swift
 //  Features
 //
-//  Created by {{ cookiecutter.creator }} on {% now 'utc', '%d/%m/%Y' %}.
+//  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
 //  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
 //
 
@@ -12,10 +12,10 @@ import Counter
 import SwiftUI
 
 @MainActor
-public struct AppView: View {
-  let store: StoreOf<AppFeature>
+public struct ProductView: View {
+  let store: StoreOf<ProductFeature>
 
-  public init(store: StoreOf<AppFeature>) {
+  public init(store: StoreOf<ProductFeature>) {
     self.store = store
   }
 
@@ -56,9 +56,9 @@ public struct AppView: View {
   }
 }
 
-extension StoreOf<AppFeature> {
+extension StoreOf<ProductFeature> {
   fileprivate var bindableDestination:
-    ComposableArchitecture.Bindable<StoreOf<AppFeature>>
+    ComposableArchitecture.Bindable<StoreOf<ProductFeature>>
   {
     return ComposableArchitecture.Bindable(self)
   }
@@ -66,14 +66,14 @@ extension StoreOf<AppFeature> {
 
 @MainActor
 extension View {
-  fileprivate func destinations(with store: StoreOf<AppFeature>) -> some View {
+  fileprivate func destinations(with store: StoreOf<ProductFeature>) -> some View {
     let bindableDestination = store.bindableDestination
     return showSheet(with: bindableDestination)
       .showFulllScreenCover(with: bindableDestination)
   }
 
   private func showSheet(
-    with destinationStore: ComposableArchitecture.Bindable<StoreOf<AppFeature>>
+    with destinationStore: ComposableArchitecture.Bindable<StoreOf<ProductFeature>>
   ) -> some View {
     let destinationStore = destinationStore.scope(
       state: \.destination?.sheet,
@@ -85,7 +85,7 @@ extension View {
   }
 
   private func showFulllScreenCover(
-    with destinationStore: ComposableArchitecture.Bindable<StoreOf<AppFeature>>
+    with destinationStore: ComposableArchitecture.Bindable<StoreOf<ProductFeature>>
   ) -> some View {
     let destinationStore = destinationStore.scope(
       state: \.destination?.fullScreenCover,
@@ -98,11 +98,11 @@ extension View {
 }
 
 #Preview {
-  AppView(
+  ProductView(
     store:
       .init(
-        initialState: AppFeature.State(),
-        reducer: { AppFeature() }
+        initialState: ProductFeature.State(),
+        reducer: { ProductFeature() }
       )
   )
 }

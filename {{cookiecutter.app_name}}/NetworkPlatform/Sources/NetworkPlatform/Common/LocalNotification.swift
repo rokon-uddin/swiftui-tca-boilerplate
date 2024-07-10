@@ -2,8 +2,8 @@
 //  LocalNotification.swift
 //  NetworkPlatform
 //
-//  Created by Rokon on 24/01/2024.
-//  Copyright © 2024 MLBD. All rights reserved.
+//  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
+//  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
 //
 
 import Combine
