@@ -10,7 +10,6 @@ import Common
 import ComposableArchitecture
 import SwiftUI
 
-@MainActor
 public struct CounterView: View {
   let store: StoreOf<Counter>
 
@@ -19,44 +18,33 @@ public struct CounterView: View {
   }
 
   public var body: some View {
-    WithPerceptionTracking {
-      VStack(spacing: 16) {
-        HStack {
-          Button {
-            store.send(.view(.decrementButtonTapped))
-          } label: {
-            Image(systemName: "minus")
-          }
-
-          Text("\(store.count)")
-            .monospacedDigit()
-
-          Button {
-            store.send(.view(.incrementButtonTapped))
-          } label: {
-            Image(systemName: "plus")
-          }
+    VStack(spacing: 16) {
+      HStack {
+        Button("Decrement", systemImage: "minus") {
+          store.send(.view(.decrementButtonTapped))
         }
 
-        Button {
-          store.send(.view(.closeButtonTapped))
-        } label: {
-          Text("Dismiss")
-            .foregroundStyle(.white)
-            .frame(width: 120, height: 40)
-            .background(.blue)
+        Text("\(store.count)")
+          .monospacedDigit()
+
+        Button("Increment", systemImage: "plus") {
+          store.send(.view(.incrementButtonTapped))
         }
       }
+      .labelStyle(.iconOnly)
+
+      Button("Dismiss") {
+        store.send(.view(.closeButtonTapped))
+      }
+      .buttonStyle(.borderedProminent)
     }
   }
 }
 
 #Preview {
   CounterView(
-    store:
-      .init(
-        initialState: Counter.State(),
-        reducer: { Counter() }
-      )
+    store: Store(initialState: Counter.State()) {
+      Counter()
+    }
   )
 }
