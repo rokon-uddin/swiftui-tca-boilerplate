@@ -44,6 +44,11 @@ extension Heap: Hashable where T: Hashable {
   }
 }
 
+// `Heap` is a copy-on-write box: the reference is mutated in place only when it is
+// uniquely referenced (`isKnownUniquelyReferenced`), otherwise a fresh copy is made.
+// That gives it value semantics, so it is as safe to send as `T` itself.
+extension Heap: @unchecked Sendable where T: Sendable {}
+
 extension Heap: Decodable where T: Decodable {
   public init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()

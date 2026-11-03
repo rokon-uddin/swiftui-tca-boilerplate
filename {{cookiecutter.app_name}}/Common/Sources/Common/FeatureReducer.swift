@@ -10,7 +10,7 @@ import ComposableArchitecture
 import SwiftUI
 
 // MARK: FeatureReducer
-public protocol FeatureReducer: Reducer
+public protocol FeatureReducer: Reducer, SendableMetatype
 where State: Sendable & Hashable, Action == FeatureAction<Self> {
   associatedtype ViewAction: Sendable = Never
   associatedtype InternalAction: Sendable = Never
@@ -92,13 +92,71 @@ public typealias PresentationStoreOf<R: Reducer> = Store<
 >
 
 // MARK: FeatureAction
-@CasePathable
-public enum FeatureAction<Feature: FeatureReducer>: Sendable {
+public enum FeatureAction<Feature: FeatureReducer> {
   case destination(PresentationAction<Feature.Destination.Action>)
   case view(Feature.ViewAction)
   case `internal`(Feature.InternalAction)
   case child(Feature.ChildAction)
   case delegate(Feature.DelegateAction)
+}
+
+// Declared in an extension rather than inline: an inline conformance is resolved
+// while building `FeatureReducer`'s requirement signature, which is circular.
+extension FeatureAction: Sendable {}
+
+// Written by hand: expanding `@CasePathable` on this enum is circular, because
+// `FeatureReducer` requires `Action == FeatureAction<Self>`.
+extension FeatureAction: CasePathable {
+  public struct AllCasePaths: Sendable {
+    public var destination:
+      AnyCasePath<FeatureAction, PresentationAction<Feature.Destination.Action>>
+    {
+      AnyCasePath(
+        embed: { .destination($0) },
+        extract: {
+          guard case let .destination(value) = $0 else { return nil }
+          return value
+        })
+    }
+
+    public var view: AnyCasePath<FeatureAction, Feature.ViewAction> {
+      AnyCasePath(
+        embed: { .view($0) },
+        extract: {
+          guard case let .view(value) = $0 else { return nil }
+          return value
+        })
+    }
+
+    public var `internal`: AnyCasePath<FeatureAction, Feature.InternalAction> {
+      AnyCasePath(
+        embed: { .internal($0) },
+        extract: {
+          guard case let .internal(value) = $0 else { return nil }
+          return value
+        })
+    }
+
+    public var child: AnyCasePath<FeatureAction, Feature.ChildAction> {
+      AnyCasePath(
+        embed: { .child($0) },
+        extract: {
+          guard case let .child(value) = $0 else { return nil }
+          return value
+        })
+    }
+
+    public var delegate: AnyCasePath<FeatureAction, Feature.DelegateAction> {
+      AnyCasePath(
+        embed: { .delegate($0) },
+        extract: {
+          guard case let .delegate(value) = $0 else { return nil }
+          return value
+        })
+    }
+  }
+
+  public static var allCasePaths: AllCasePaths { AllCasePaths() }
 }
 
 // MARK: DestinationReducer
