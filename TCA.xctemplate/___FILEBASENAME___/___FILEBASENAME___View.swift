@@ -6,25 +6,21 @@
 //___COPYRIGHT___
 //
 
-import SwiftUI
-import Commons
-import Resources
+import Common
 import ComposableArchitecture
+import SwiftUI
 
 public struct ___VARIABLE_moduleName___View: View {
-    let store: StoreOf<___VARIABLE_moduleName___Feature>
+  @Bindable var store: StoreOf<___VARIABLE_moduleName___Feature>
 
-    public init(store: StoreOf<___VARIABLE_moduleName___Feature>) {
-        self.store = store
-    }
+  public init(store: StoreOf<___VARIABLE_moduleName___Feature>) {
+    self.store = store
+  }
 
-    public var body: some View {
-        WithPerceptionTracking {
-            Text("Hello World!!!")
-            .onAppear {
-//                Just for example
-//                store.send(.onAppear)
-            }
-        }
-    }
+  public var body: some View {
+    Text("Hello World!!!")
+      .task {
+        await store.send(.view(.task)).finish()
+      }
+  }
 }

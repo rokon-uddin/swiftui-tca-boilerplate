@@ -8,25 +8,45 @@ on:
 
 jobs:
   build:
-    name: Build project
+    name: Build and test generated project
     runs-on: macos-latest
-    strategy:
-      matrix:
-        destination: ['platform=iOS Simulator,OS=17.0,name=iPhone 15']
 
     steps:
       - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1.6.0
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.0'
+          xcode-version: latest-stable
+
       - name: Checkout
-        uses: actions/checkout@v3
-      - name: Build
-        working-directory: ./{{cookiecutter.app_name}}
-        env:
-          platform: ${{ 'iOS Simulator' }}
+        uses: actions/checkout@v4
+
+      - name: Install cookiecutter
+        run: pipx install cookiecutter
+
+      # The template folder contains `{{cookiecutter.*}}` placeholders that can't
+      # compile, so build the project cookiecutter actually generates.
+      - name: Generate project
+        run: cookiecutter --no-input . --output-dir "$RUNNER_TEMP/generated"
+
+      - name: Test Swift packages
+        working-directory: ${{ runner.temp }}/generated/AwesomeApp
         run: |
-          echo "destination=${destination}"
-          xcodebuild clean test -project {{cookiecutter.app_name}}.xcodeproj -scheme Development -destination "${destination}" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO ONLY_ACTIVE_ARCH=NO
-    env:
-      destination: ${{ matrix.destination }}
+          for package in Utilities Domain NetworkPlatform PersistentPlatform Common Features; do
+            echo "::group::swift test ($package)"
+            swift test --package-path "$package"
+            echo "::endgroup::"
+          done
+
+      - name: Build and test app
+        working-directory: ${{ runner.temp }}/generated/AwesomeApp
+        run: |
+          device=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')
+          echo "Using simulator: $device"
+          xcodebuild test \
+            -project AwesomeApp.xcodeproj \
+            -scheme Development \
+            -destination "platform=iOS Simulator,name=$device" \
+            -only-testing:AwesomeAppTests \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
