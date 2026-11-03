@@ -1,5 +1,5 @@
 //
-//  NetworkRepository.swift
+//  RemoteProductRepository.swift
 //  NetworkPlatform
 //
 //  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
@@ -10,10 +10,10 @@ import Domain
 
 public struct RemoteProductRepository: Domain.RemoteProductRepository {
 
-  private let network: AppNetworking
+  private let client: HTTPClient
 
-  private init(network: AppNetworking) {
-    self.network = network
+  init(client: HTTPClient) {
+    self.client = client
   }
 
   public func create(input: Product) async throws {
@@ -21,15 +21,18 @@ public struct RemoteProductRepository: Domain.RemoteProductRepository {
   }
 
   public func read(input: Int) async throws -> Product? {
-    try await network.requestObject(
-      .product(id: input),
-      type: Product.self)
+    try await client.request(AppEndpoint.product(id: input), as: Product.self)
   }
 }
 
 extension RemoteProductRepository {
-  public static var live = RemoteProductRepository(
-    network: AppNetworking.defaultNetworking())
-  public static var stubbed = RemoteProductRepository(
-    network: AppNetworking.stubbingNetworking())
+  public static let live = RemoteProductRepository(
+    client: HTTPClient(
+      transport: URLSessionTransport(),
+      activity: NetworkActivityCenter.shared,
+      tokenRefresher: .live))
+  public static let stubbed = RemoteProductRepository(
+    client: HTTPClient(
+      transport: StubTransport(),
+      activity: NetworkActivityCenter.shared))
 }

@@ -1,73 +1,35 @@
 //
-//  AppAPI.swift
+//  AppEndpoint.swift
 //  NetworkPlatform
 //
 //  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
 //  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
 //
 
-import BuildConfiguration
 import Foundation
-import Moya
 
-enum AppAPI {
+enum AppEndpoint: Endpoint {
   case product(id: Int)
-}
 
-extension AppAPI: TargetType, ProductAPIType, Stubble {
   var baseURL: URL {
-    return URL(string: "https://fakestoreapi.com")!
+    URL(string: "https://fakestoreapi.com")!
   }
 
   var path: String {
     switch self {
-    case let .product(id): return "/products/\(id)"
+    case let .product(id): "/products/\(id)"
     }
   }
 
-  var method: Moya.Method {
+  var method: HTTPMethod {
     switch self {
-    default:
-      return .get
+    case .product: .get
     }
   }
 
-  var headers: [String: String]? {
-    return nil
-  }
-
-  var parameters: [String: Any]? {
-    let params: [String: Any] = [:]
+  var stubFileName: String? {
     switch self {
-    default: break
-    }
-    return params
-  }
-
-  var parameterEncoding: ParameterEncoding {
-    return URLEncoding.default
-  }
-
-  var sampleData: Data {
-    var fileName = ""
-    switch self {
-    case .product:
-      fileName = "Product"
-    }
-    return stubbedResponse(fileName)
-  }
-
-  var task: Task {
-    if let parameters = parameters {
-      return .requestParameters(
-        parameters: parameters, encoding: parameterEncoding)
-    }
-    return .requestPlain
-  }
-
-  var addXAuth: Bool {
-    switch self {
-    default: return false
+    case .product: "Product"
     }
   }
 }

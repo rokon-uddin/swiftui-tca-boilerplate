@@ -1,5 +1,5 @@
 //
-//  AuthAPI.swift
+//  AuthEndpoint.swift
 //  NetworkPlatform
 //
 //  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
@@ -7,49 +7,31 @@
 //
 
 import Foundation
-import Moya
 
-enum AuthAPI {
+enum AuthEndpoint: Endpoint {
   case accessToken
-}
 
-extension AuthAPI: TargetType, ProductAPIType, Stubble {
   var baseURL: URL {
-    return URL(string: "https://api.punkapi.com/v2/token")!
+    URL(string: "https://api.punkapi.com/v2/token")!
   }
 
   var path: String {
     switch self {
-    case .accessToken:
-      return "/access_token"
+    case .accessToken: "/access_token"
     }
   }
 
-  var method: Moya.Method {
-    return .get
+  var method: HTTPMethod {
+    .get
   }
 
-  var task: Task {
+  var stubFileName: String? {
     switch self {
-    default:
-      return .requestPlain
+    case .accessToken: "AccessToken"
     }
   }
+}
 
-  var sampleData: Data {
-    switch self {
-    case .accessToken:
-      return stubbedResponse("AccessToken")
-    }
-  }
-
-  var headers: [String: String]? {
-    return nil
-  }
-
-  var addXAuth: Bool {
-    switch self {
-    default: return true
-    }
-  }
+struct AccessTokenResponse: Decodable, Sendable {
+  let accessToken: String
 }
