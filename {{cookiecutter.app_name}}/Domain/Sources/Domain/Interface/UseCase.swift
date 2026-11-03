@@ -8,7 +8,7 @@
 
 import Foundation
 
-public protocol UseCase<Input, Output> {
+public protocol UseCase<Input, Output>: Sendable {
   associatedtype Input
   associatedtype Output
 
@@ -18,5 +18,19 @@ public protocol UseCase<Input, Output> {
 extension UseCase where Input == Void {
   public func callAsFunction() async throws -> Output {
     try await callAsFunction(input: ())
+  }
+}
+
+/// A use case that produces a long-lived stream of values.
+public protocol StreamUseCase<Input, Element>: Sendable {
+  associatedtype Input
+  associatedtype Element: Sendable
+
+  func callAsFunction(input: Input) async -> AsyncStream<Element>
+}
+
+extension StreamUseCase where Input == Void {
+  public func callAsFunction() async -> AsyncStream<Element> {
+    await callAsFunction(input: ())
   }
 }

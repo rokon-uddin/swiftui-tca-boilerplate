@@ -8,11 +8,11 @@
 
 import Foundation
 
-public protocol PrepareRepository {
+public protocol PrepareRepository: Sendable {
   func prepare() async throws
 }
 
-public protocol CreateRepository {
+public protocol CreateRepository: Sendable {
   associatedtype CreateInput = Never
   associatedtype CreateOutput = Never
   associatedtype RepositoryType
@@ -22,7 +22,7 @@ public protocol CreateRepository {
   static var stubbed: RepositoryType { get }
 }
 
-public protocol ReadRepository {
+public protocol ReadRepository: Sendable {
   associatedtype ReadInput = Never
   associatedtype ReadOutput = Never
   associatedtype RepositoryType
@@ -32,7 +32,7 @@ public protocol ReadRepository {
   static var stubbed: RepositoryType { get }
 }
 
-public protocol ReadAllRepository {
+public protocol ReadAllRepository: Sendable {
   associatedtype ReadInput = Never
   associatedtype ReadOutput = Never
   associatedtype RepositoryType
@@ -42,7 +42,7 @@ public protocol ReadAllRepository {
   static var stubbed: RepositoryType { get }
 }
 
-public protocol UpdateRepository {
+public protocol UpdateRepository: Sendable {
   associatedtype UpdateInput = Never
   associatedtype UpdateOutput = Never
   associatedtype RepositoryType
@@ -52,7 +52,7 @@ public protocol UpdateRepository {
   static var stubbed: RepositoryType { get }
 }
 
-public protocol DeleteRepository {
+public protocol DeleteRepository: Sendable {
   associatedtype DeleteInput = Never
   associatedtype DeleteOutput = Never
   associatedtype RepositoryType
@@ -62,6 +62,24 @@ public protocol DeleteRepository {
   static var stubbed: RepositoryType { get }
 }
 
+/// A repository that publishes its current contents whenever they change.
+public protocol ObserveRepository: Sendable {
+  associatedtype ObserveOutput: Sendable
+
+  func observe() async -> AsyncStream<ObserveOutput>
+}
+
+public protocol ReachabilityRepository: Sendable {
+  /// Emits `true` when the network is reachable, `false` otherwise.
+  func observe() -> AsyncStream<Bool>
+}
+
+public protocol NetworkActivityRepository: Sendable {
+  func observe() async -> AsyncStream<NetworkActivity>
+}
+
 public typealias RemoteProductRepository = CreateRepository & ReadRepository
 
 public typealias PersistentProductRepository = CreateRepository & ReadRepository
+
+public typealias ObservableProductRepository = ObserveRepository

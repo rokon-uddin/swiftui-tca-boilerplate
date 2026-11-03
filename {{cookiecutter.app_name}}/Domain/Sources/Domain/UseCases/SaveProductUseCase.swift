@@ -10,8 +10,8 @@ import Foundation
 
 public typealias SaveProductUseCaseType = UseCase<Product, Void>
 
-public final class SaveProductUseCase: UseCase {
-  var saveProduct: (_ input: Product) async throws -> Void
+public struct SaveProductUseCase: UseCase {
+  let saveProduct: @Sendable (_ input: Product) async throws -> Void
 
   public init<R: PersistentProductRepository>(repository: R)
   where R.CreateInput == Input, R.CreateOutput == Output {
@@ -19,6 +19,6 @@ public final class SaveProductUseCase: UseCase {
   }
 
   public func callAsFunction(input: Product) async throws {
-    return try await saveProduct(input)
+    try await saveProduct(input)
   }
 }

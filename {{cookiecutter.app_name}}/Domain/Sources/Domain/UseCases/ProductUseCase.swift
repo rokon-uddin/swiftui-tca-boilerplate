@@ -10,9 +10,9 @@ import Foundation
 
 public typealias ProductUseCaseType = UseCase<Int, Product?>
 
-public final class ProductUseCase: UseCase {
+public struct ProductUseCase: UseCase {
 
-  var getProduct: (_ input: Int) async throws -> Product?
+  let getProduct: @Sendable (_ input: Int) async throws -> Product?
 
   public init<R: RemoteProductRepository>(repository: R)
   where R.ReadInput == Input, R.ReadOutput == Output {
@@ -20,6 +20,6 @@ public final class ProductUseCase: UseCase {
   }
 
   public func callAsFunction(input: Int) async throws -> Product? {
-    return try await getProduct(input)
+    try await getProduct(input)
   }
 }
