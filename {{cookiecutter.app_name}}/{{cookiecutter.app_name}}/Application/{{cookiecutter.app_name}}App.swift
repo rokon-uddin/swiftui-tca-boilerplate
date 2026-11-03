@@ -1,5 +1,5 @@
 //
-//  MainApp.swift
+//  {{cookiecutter.app_name}}App.swift
 //  {{cookiecutter.app_name}}
 //
 //  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
@@ -10,18 +10,17 @@ import ComposableArchitecture
 import Product
 import SwiftUI
 
-// MARK: To run the boilerplate on local machine. Please rename '{{cookiecutter.app_name}}App' to any suitable name e.g 'HelloWordApp' to avoid build error.
-
 @main
 struct {{cookiecutter.app_name}}App: App {
-    var body: some Scene {
-      let store = Store(
-        initialState: ProductFeature.State(),
-        reducer: { ProductFeature() }
-      )
+  /// Created once for the app's lifetime. Building it inside `body` would recreate
+  /// the store, and lose its state, every time the scene is re-evaluated.
+  @MainActor static let store = Store(initialState: ProductFeature.State()) {
+    ProductFeature()
+  }
 
-      WindowGroup {
-          ProductView(store: store)
-      }
+  var body: some Scene {
+    WindowGroup {
+      ProductView(store: Self.store)
     }
+  }
 }

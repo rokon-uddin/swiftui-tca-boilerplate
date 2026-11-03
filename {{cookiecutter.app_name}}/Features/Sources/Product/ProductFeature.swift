@@ -10,31 +10,50 @@ import Common
 import ComposableArchitecture
 import Counter
 import Domain
+import Foundation
+import Utilities
 
 public struct ProductFeature: FeatureReducer {
 
-  @Dependency(\.appClient) var appClient
+  @Dependency(\.productClient) var productClient
 
   public init() {}
 
   @ObservableState
-  public struct State: Equatable, Hashable {
+  public struct State: Equatable, Hashable, Sendable {
     public init() {}
 
     @Presents var destination: Destination.State?
     var product: Product?
+    var savedProducts: [Product] = []
+    var isOnline = true
+    var inFlightRequests: Set<UUID> = []
+    var errorMessage: String?
+
+    var isLoading: Bool { !inFlightRequests.isEmpty }
   }
 
-  public enum ViewAction {
-    case onAppear
+  public enum ViewAction: Sendable {
+    case task
     case showSheet
     case showFullScreenCover
     case save
   }
 
-  public enum InternalAction {
+  @CasePathable
+  public enum InternalAction: Sendable {
     case dismissDestination
-    case productResponse(Result<Product?, Error>)
+    case productResponse(Result<Product?, any Error>)
+    case saveFailed(String)
+    case reachabilityChanged(Bool)
+    case networkActivity(NetworkActivity)
+    case savedProductsChanged([Product])
+  }
+
+  enum CancelID {
+    case reachability
+    case networkActivity
+    case savedProducts
   }
 
   public var body: some ReducerOf<Self> {
@@ -44,20 +63,18 @@ public struct ProductFeature: FeatureReducer {
       }
   }
 
-  public func reduce(into state: inout State, viewAction: ViewAction) -> Effect<
-    Action
-  > {
+  public func reduce(into state: inout State, viewAction: ViewAction) -> Effect<Action> {
     switch viewAction {
-    case .onAppear:
-      return .run { send in
-        try? await appClient.prepareCoreData()
-        await send(
-          .internal(
-            .productResponse(
-              Result {
-                try await appClient.getProduct(input: 2)
-              })))
-      }
+    case .task:
+      // Long-lived effects are tied to the view's `.task`, so they are cancelled
+      // automatically when the view disappears.
+      return .merge(
+        observeNetworkActivity(),
+        observeReachability(),
+        observeSavedProducts(),
+        loadProduct(id: 2)
+      )
+
     case .showSheet:
       state.destination = .sheet(.init())
       return .none
@@ -67,11 +84,12 @@ public struct ProductFeature: FeatureReducer {
       return .none
 
     case .save:
-      return .run { [product = state.product] send in
+      guard let product = state.product else { return .none }
+      return .run { [productClient] send in
         do {
-          try await appClient.saveProduct(input: product!)
+          try await productClient.saveProduct(input: product)
         } catch {
-
+          await send(.internal(.saveFailed(error.localizedDescription)))
         }
       }
     }
@@ -96,17 +114,85 @@ public struct ProductFeature: FeatureReducer {
     switch internalAction {
     case let .productResponse(.success(product)):
       state.product = product
+      state.errorMessage = nil
       return .none
-    case let .productResponse(.failure(error)) where error is AppError:
-      print(error)
-      return .none
+
     case let .productResponse(.failure(error)):
-      print(error)
+      Logger.error(error.localizedDescription)
+      state.errorMessage = error.localizedDescription
       return .none
+
+    case let .saveFailed(message):
+      Logger.error(message)
+      state.errorMessage = message
+      return .none
+
+    case let .reachabilityChanged(isOnline):
+      state.isOnline = isOnline
+      return .none
+
+    case let .networkActivity(activity):
+      switch activity {
+      case let .started(id, _):
+        state.inFlightRequests.insert(id)
+      case let .finished(id, _), let .failed(id, _):
+        state.inFlightRequests.remove(id)
+      }
+      return .none
+
+    case let .savedProductsChanged(products):
+      state.savedProducts = products
+      return .none
+
     case .dismissDestination:
       state.destination = nil
       return .none
     }
+  }
+
+  // MARK: Effects
+
+  private func loadProduct(id: Int) -> Effect<Action> {
+    .run { [productClient] send in
+      do {
+        try await productClient.prepareCoreData()
+      } catch {
+        Logger.error(error.localizedDescription)
+      }
+      do {
+        let product = try await productClient.getProduct(input: id)
+        await send(.internal(.productResponse(.success(product))))
+      } catch {
+        await send(.internal(.productResponse(.failure(error))))
+      }
+    }
+  }
+
+  private func observeReachability() -> Effect<Action> {
+    .run { [productClient] send in
+      for await isOnline in await productClient.observeReachability() {
+        await send(.internal(.reachabilityChanged(isOnline)))
+      }
+    }
+    .cancellable(id: CancelID.reachability, cancelInFlight: true)
+  }
+
+  private func observeNetworkActivity() -> Effect<Action> {
+    .run { [productClient] send in
+      for await activity in await productClient.observeNetworkActivity() {
+        await send(.internal(.networkActivity(activity)))
+      }
+    }
+    .cancellable(id: CancelID.networkActivity, cancelInFlight: true)
+  }
+
+  private func observeSavedProducts() -> Effect<Action> {
+    .run { [productClient] send in
+      for await products in await productClient.observeProducts() {
+        await send(.internal(.savedProductsChanged(products)))
+      }
+    }
+    .cancellable(id: CancelID.savedProducts, cancelInFlight: true)
   }
 
   public struct Destination: DestinationReducer {
@@ -115,24 +201,25 @@ public struct ProductFeature: FeatureReducer {
 
     @dynamicMemberLookup
     @CasePathable
-    public enum State: Hashable {
+    public enum State: Hashable, Sendable {
       case sheet(Counter.State)
       case fullScreenCover(Counter.State)
     }
 
     @CasePathable
-    public enum Action {
+    public enum Action: Sendable {
       case sheet(Counter.Action)
       case fullScreenCover(Counter.Action)
     }
 
     public var body: some ReducerOf<Self> {
-      Scope(state: \.sheet, action: \.sheet) {
-        Counter()
-      }
-      Scope(state: \.fullScreenCover, action: \.fullScreenCover) {
-        Counter()
-      }
+      EmptyReducer()
+        .ifCaseLet(\.sheet, action: \.sheet) {
+          Counter()
+        }
+        .ifCaseLet(\.fullScreenCover, action: \.fullScreenCover) {
+          Counter()
+        }
     }
   }
 }

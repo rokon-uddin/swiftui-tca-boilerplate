@@ -8,14 +8,14 @@
 
 import Foundation
 
-public class BuildConfiguration {
-  struct Configuration: Decodable {
+public final class BuildConfiguration: Sendable {
+  struct Configuration: Decodable, Sendable {
     let name: String
     let baseURL: String
     let testFlags: TestFlags?
   }
 
-  struct TestFlags: Decodable {
+  struct TestFlags: Decodable, Sendable {
     let resetData: Bool
     let noSplash: Bool
     let applyTestData: Bool

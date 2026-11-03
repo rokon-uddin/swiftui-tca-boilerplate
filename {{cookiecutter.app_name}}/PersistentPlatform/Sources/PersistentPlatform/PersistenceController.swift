@@ -10,22 +10,46 @@ import CoreData
 import Domain
 import Utilities
 
+/// Owns the Core Data stack.
+///
+/// Every operation runs inside `context.perform` on a private background context
+/// that never leaves the actor. Only `Sendable` domain values cross the actor
+/// boundary; `NSManagedObject`s stay on the context's queue.
 actor PersistenceController {
   static let shared = PersistenceController()
-  var persistentStoreNotLoaded = true
-  let container: NSPersistentContainer = {
-    let objectModel = try! NSManagedObjectModel.managedObjectModel(
-      forResource: Constants.CoreData.model)
-    let container = NSPersistentContainer(
-      name: Constants.CoreData.model, managedObjectModel: objectModel)
-    let description = container.persistentStoreDescriptions.first
-    description?.shouldInferMappingModelAutomatically = false
-    description?.shouldMigrateStoreAutomatically = false
-    return container
+
+  /// Loaded once per process. Loading the same model more than once makes Core Data
+  /// unable to map `NSManagedObject` subclasses to a unique entity.
+  /// `NSManagedObjectModel` is immutable once a coordinator uses it.
+  private nonisolated(unsafe) static let model: NSManagedObjectModel = {
+    do {
+      return try NSManagedObjectModel.managedObjectModel(forResource: Constants.CoreData.model)
+    } catch {
+      fatalError("Unable to load Core Data model: \(error)")
+    }
   }()
 
-  var viewContext: NSManagedObjectContext {
-    container.viewContext
+  private let container: NSPersistentContainer
+  /// Created on first use, after `prepare()` has loaded the store.
+  private lazy var context: NSManagedObjectContext = {
+    let context = container.newBackgroundContext()
+    context.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
+    return context
+  }()
+  private var loadTask: Task<Void, any Error>?
+  private let productChanges = AsyncBroadcaster<[Domain.Product]>(
+    replayLatest: true, bufferingPolicy: .bufferingNewest(1))
+
+  init(inMemory: Bool = false) {
+    container = NSPersistentContainer(name: Constants.CoreData.model, managedObjectModel: Self.model)
+    let description = container.persistentStoreDescriptions.first
+    if inMemory {
+      description?.type = NSInMemoryStoreType
+      description?.url = nil
+    }
+    description?.shouldInferMappingModelAutomatically = false
+    description?.shouldMigrateStoreAutomatically = false
+    description?.shouldAddStoreAsynchronously = false
   }
 }
 
@@ -33,30 +57,21 @@ actor PersistenceController {
 
 extension PersistenceController {
 
-  private func saveContext(_ context: NSManagedObjectContext) {
-    guard context.hasChanges else { return }
-    do {
-      try context.save()
-    } catch {
-      assertionFailure("Unresolved error \(error)")
-    }
-  }
-
-  private func fetch<T>(
-    _ request: NSFetchRequest<T>,
-    context: NSManagedObjectContext
-  ) throws -> [T] where T: NSFetchRequestResult {
-    try context.performAndWait {
-      try context.fetch(request)
-    }
-
-  }
-
+  /// Loads the persistent store once. Concurrent callers await the same load, so
+  /// actor reentrancy cannot load the store twice.
   func prepare() async throws {
-    if persistentStoreNotLoaded {
-      _ = try await loadPersistentStore()
-      persistentStoreNotLoaded = false
+    if let loadTask {
+      return try await loadTask.value
     }
+    let task = Task { try await loadPersistentStore() }
+    loadTask = task
+    do {
+      try await task.value
+    } catch {
+      loadTask = nil
+      throw error
+    }
+    await publishProducts()
   }
 
   func rebuild() async throws {
@@ -66,42 +81,19 @@ extension PersistenceController {
     }
 
     try NSPersistentStoreCoordinator.destroyStore(at: storeURL)
-
-    return try await withCheckedThrowingContinuation { continuation in
-      container.loadPersistentStores { _, error in
-        guard error == nil else {
-          let message = "Was unable to load store \(String(describing: error))."
-          continuation.resume(throwing: AppError.databaseCorrupted(message))
-          return
-        }
-      }
-    }
-  }
-
-  func materializedObjects(
-    context: NSManagedObjectContext, predicate: NSPredicate
-  ) -> [NSManagedObject] {
-    context.performAndWait {
-      var objects = [NSManagedObject]()
-      for object in context.registeredObjects where !object.isFault {
-        guard object.entity.attributesByName.keys.contains("uid"),
-          predicate.evaluate(with: object)
-        else { continue }
-        objects.append(object)
-      }
-      return objects
-    }
+    loadTask = nil
+    try await prepare()
   }
 
   private func loadPersistentStore() async throws {
-    return try await withCheckedThrowingContinuation { continuation in
-      container.loadPersistentStores { desc, error in
-        guard error == nil else {
-          let message = "Was unable to load store \(String(describing: error))."
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+      container.loadPersistentStores { description, error in
+        if let error {
+          let message = "Was unable to load store \(error)."
           continuation.resume(throwing: AppError.databaseCorrupted(message))
           return
         }
-        debugPrint("Persistent store loaded: \(desc)")
+        Logger.info("Persistent store loaded: \(description)")
         continuation.resume()
       }
     }
@@ -112,296 +104,106 @@ extension PersistenceController {
 
 extension PersistenceController {
 
-  private func batchFetch<MO: NSManagedObject>(
-    entityType: MO.Type,
-    fetchLimit: Int = 100,
-    predicate: NSPredicate? = nil,
-    findBeforeFetch: Bool = false,
-    sortDescriptors: [NSSortDescriptor]? = nil,
-    context: NSManagedObjectContext
-  ) -> [MO] {
-    var results = [MO]()
-    results = context.performAndWait {
-      if findBeforeFetch, let predicate = predicate {
-        if let objects = materializedObjects(
-          context: context, predicate: predicate)
-          as? [MO],
-          !objects.isEmpty
-        {
-          results = objects
-        }
+  /// Fetches objects and converts them to domain values on the context's queue.
+  ///
+  /// `configure` builds the predicate, sort descriptors, etc. inside the queue, so
+  /// non-Sendable Foundation types never cross the isolation boundary.
+  func fetch<MO: NSManagedObject & DomainConvertible>(
+    _ entityType: MO.Type,
+    configure: @escaping @Sendable (NSFetchRequest<MO>) -> Void = { _ in }
+  ) async throws -> [MO.DomainType] where MO.DomainType: Sendable {
+    try await prepare()
+    return try await context.perform { [context] in
+      let request = NSFetchRequest<MO>(entityName: String(describing: entityType))
+      configure(request)
+      return try context.fetch(request).map { $0.asDomain() }
+    }
+  }
+
+  /// Updates the first object matching the configured request, creating it when
+  /// none exists.
+  func upsert<MO: NSManagedObject>(
+    _ entityType: MO.Type,
+    configure: @escaping @Sendable (NSFetchRequest<MO>) -> Void,
+    commitChanges: @escaping @Sendable (MO) -> Void
+  ) async throws {
+    try await prepare()
+    try await context.perform { [context] in
+      let request = NSFetchRequest<MO>(entityName: String(describing: entityType))
+      configure(request)
+      request.fetchLimit = 1
+      let object = try context.fetch(request).first ?? MO(context: context)
+      commitChanges(object)
+      try Self.save(context)
+    }
+  }
+
+  func purge<MO: NSManagedObject>(
+    _ entityType: MO.Type,
+    configure: @escaping @Sendable (NSFetchRequest<MO>) -> Void = { _ in }
+  ) async throws {
+    try await prepare()
+    try await context.perform { [context] in
+      let request = NSFetchRequest<MO>(entityName: String(describing: entityType))
+      configure(request)
+      for object in try context.fetch(request) {
+        context.delete(object)
       }
-      let request = NSFetchRequest<MO>(
-        entityName: String(describing: entityType)
-      )
-      request.predicate = predicate
-      request.fetchLimit = fetchLimit
-      request.sortDescriptors = sortDescriptors
-
-      results = (try? fetch(request, context: context)) ?? []
-      return results
-    }
-    return results
-  }
-
-  func batchFetchDomainObject<MO: NSManagedObject>(
-    entityType: MO.Type,
-    fetchLimit: Int = 100,
-    predicate: NSPredicate? = nil,
-    findBeforeFetch: Bool = false,
-    sortDescriptors: [NSSortDescriptor]? = nil,
-    context: NSManagedObjectContext? = nil
-  ) -> [MO.DomainType] where MO: DomainConvertible {
-    let context = context ?? container.newBackgroundContext()
-    return batchFetch(
-      entityType: entityType,
-      fetchLimit: fetchLimit,
-      predicate: predicate,
-      findBeforeFetch: findBeforeFetch,
-      sortDescriptors: sortDescriptors,
-      context: context
-    ).asDomain(context: context)
-  }
-
-  private func fetch<MO: NSManagedObject>(
-    entityType: MO.Type,
-    predicate: NSPredicate? = nil,
-    findBeforeFetch: Bool = false,
-    commitChanges: ((MO?) -> Void)? = nil,
-    context: NSManagedObjectContext
-  ) -> MO? {
-    return context.performAndWait {
-      let managedObject = batchFetch(
-        entityType: entityType, fetchLimit: 1,
-        predicate: predicate, findBeforeFetch: findBeforeFetch,
-        context: context
-      ).first
-      commitChanges?(managedObject)
-      return managedObject
+      try Self.save(context)
     }
   }
 
-  private func fetchDomainObject<MO: Identifiable>(
-    entityType: MO.Type,
-    uid: String,
-    findBeforeFetch: Bool = false,
-    commitChanges: ((MO?) -> Void)? = nil,
-    contextToUse: NSManagedObjectContext? = nil
-  ) -> MO.DomainType? where MO: DomainConvertible {
-    let context = contextToUse ?? container.newBackgroundContext()
-    return context.performAndWait {
-      fetch(
-        entityType: entityType,
-        uid: uid,
-        findBeforeFetch: findBeforeFetch,
-        commitChanges: commitChanges,
-        context: context
-      )?.asDomain(context: context)
+  private static func save(_ context: NSManagedObjectContext) throws {
+    guard context.hasChanges else { return }
+    do {
+      try context.save()
+    } catch {
+      context.rollback()
+      throw AppError.databaseCorrupted("Unable to save context: \(error)")
     }
-  }
-
-  func fetchDomainObject<MO: NSManagedObject>(
-    entityType: MO.Type,
-    predicate: NSPredicate? = nil,
-    findBeforeFetch: Bool = false,
-    commitChanges: ((MO?) -> Void)? = nil,
-    contextToUse: NSManagedObjectContext? = nil
-  ) -> MO.DomainType? where MO: DomainConvertible {
-
-    let context = contextToUse ?? container.viewContext
-
-    return fetch(
-      entityType: entityType,
-      predicate: predicate,
-      findBeforeFetch: findBeforeFetch,
-      commitChanges: commitChanges,
-      context: context
-    )?.asDomain(context: context)
-  }
-
-  private func fetch<MO: Identifiable>(
-    entityType: MO.Type,
-    uid: String,
-    findBeforeFetch: Bool = false,
-    commitChanges: ((MO?) -> Void)? = nil,
-    context: NSManagedObjectContext
-  ) -> MO? {
-    return context.performAndWait {
-      fetch(
-        entityType: entityType,
-        predicate: NSPredicate(format: "uid == %@", uid),
-        findBeforeFetch: findBeforeFetch,
-        commitChanges: commitChanges,
-        context: context
-      )
-    }
-  }
-
-  private func fetchOrCreate<MO: NSManagedObject>(
-    entityType: MO.Type,
-    predicate: NSPredicate? = nil,
-    commitChanges: ((MO?) -> Void)? = nil,
-    context: NSManagedObjectContext
-  ) -> MO {
-    if let storedDomainObject: MO = fetch(
-      entityType: entityType,
-      predicate: predicate,
-      context: context
-    ) {
-      return storedDomainObject
-    } else {
-      return context.performAndWait {
-        let newMO = MO(context: context)
-        commitChanges?(newMO)
-        saveContext(context)
-        return newMO
-      }
-
-    }
-  }
-
-  private func fetchOrCreate<MO: Identifiable>(
-    entityType: MO.Type, uid: String, context: NSManagedObjectContext
-  ) -> MO {
-    fetchOrCreate(
-      entityType: entityType,
-      predicate: NSPredicate(format: "uid == %@", uid),
-      commitChanges: { $0?.uid = uid },
-      context: context
-    )
-  }
-
-  private func fetchOrCreateDomainObject<MO: NSManagedObject>(
-    entityType: MO.Type,
-    predicate: NSPredicate? = nil,
-    commitChanges: ((MO?) -> Void)? = nil,
-    context: NSManagedObjectContext
-  ) -> MO.DomainType where MO: DomainConvertible {
-    fetchOrCreate(
-      entityType: entityType,
-      predicate: predicate,
-      commitChanges: commitChanges,
-      context: context
-    ).asDomain(context: context)
-  }
-
-  public func batchUpdate<MO: NSManagedObject>(
-    entityType: MO.Type,
-    predicate: NSPredicate? = nil,
-    commitChanges: ([MO]) -> Void,
-    context: NSManagedObjectContext
-  ) {
-    context.performAndWait {
-      commitChanges(
-        batchFetch(
-          entityType: entityType,
-          predicate: predicate,
-          findBeforeFetch: false,
-          context: context
-        ))
-      saveContext(context)
-    }
-  }
-
-  func update<MO: NSManagedObject>(
-    entityType: MO.Type,
-    predicate: NSPredicate? = nil,
-    createIfNil: Bool = true,
-    commitChanges: @escaping (MO?) -> Void,
-    contextToUse: NSManagedObjectContext? = nil
-  ) {
-    let context = contextToUse ?? container.newBackgroundContext()
-    context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
-    context.perform {
-      let storedMO: MO?
-
-      if createIfNil {
-        storedMO = self.fetchOrCreate(
-          entityType: entityType, predicate: predicate, context: context)
-      } else {
-        storedMO = self.fetch(
-          entityType: entityType, predicate: predicate, context: context)
-      }
-
-      if let storedMO = storedMO {
-        context.performAndWait {
-          commitChanges(storedMO)
-          self.saveContext(context)
-        }
-      }
-    }
-  }
-
-  private func update<MO: Identifiable>(
-    entityType: MO.Type,
-    uid: String,
-    createIfNil: Bool = false,
-    commitChanges: @escaping ((MO) -> Void),
-    context: NSManagedObjectContext
-  ) -> MO? {
-    context.performAndWait {
-      let storedMO: MO?
-      if createIfNil {
-        storedMO = fetchOrCreate(
-          entityType: entityType, uid: uid, context: context)
-      } else {
-        storedMO = fetch(entityType: entityType, uid: uid, context: context)
-      }
-      if let storedMO = storedMO {
-        commitChanges(storedMO)
-        saveContext(context)
-      }
-
-      return storedMO
-    }
-  }
-
-  public func purgeEntity<MO: NSManagedObject>(
-    entityType: MO.Type, predicate: NSPredicate? = nil,
-    context: NSManagedObjectContext
-  ) {
-    let fetchRequest: NSFetchRequest<NSFetchRequestResult> =
-      entityType.fetchRequest()
-    fetchRequest.predicate = predicate
-    let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-
-    context.performAndWait {
-      _ = try? context.execute(batchDeleteRequest)
-      saveContext(context)
-    }
-
   }
 }
 
 // MARK: Public API
 
 extension PersistenceController {
-  public func save(product: Domain.Product) async {
-    update(entityType: Product.self, createIfNil: true) {
-      $0?.id = "\(product.id)"
-      $0?.title = product.title
-      $0?.price = product.price
-      $0?.image = product.image
-      //            $0?.rating = product.rating.toManagedObject(in: persistenceController.container.newBackgroundContext())
-      $0?.category = product.category
-      $0?.productDescription = product.description
+
+  func save(product: Domain.Product) async throws {
+    try await upsert(
+      Product.self,
+      configure: { $0.predicate = Product.predicate(id: product.id) },
+      commitChanges: { $0.update(from: product) })
+    await publishProducts()
+  }
+
+  func product(id: Int) async throws -> Domain.Product? {
+    try await fetch(Product.self) {
+      $0.predicate = Product.predicate(id: id)
+      $0.fetchLimit = 1
+    }.first
+  }
+
+  func products() async throws -> [Domain.Product] {
+    try await fetch(Product.self) {
+      $0.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)]
     }
   }
 
-  public func getProduct(id: Int) async throws -> Domain.Product? {
-    fetchDomainObject(entityType: Product.self)
+  /// Emits the current products immediately, then again after every save.
+  func observeProducts() async -> AsyncStream<[Domain.Product]> {
+    do {
+      try await prepare()
+    } catch {
+      Logger.error(error.localizedDescription)
+    }
+    return await productChanges.stream()
   }
-}
 
-// MARK: Definition
-
-protocol ManagedObjectConvertible {
-  associatedtype ManagedObject: NSManagedObject, DomainConvertible
-
-  @discardableResult
-  func toManagedObject(in context: NSManagedObjectContext) -> ManagedObject
-}
-
-protocol Identifiable: NSManagedObject {
-  var uid: String { get set }
+  private func publishProducts() async {
+    do {
+      await productChanges.yield(try await products())
+    } catch {
+      Logger.error(error.localizedDescription)
+    }
+  }
 }

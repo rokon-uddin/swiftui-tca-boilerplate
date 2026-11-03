@@ -1,6 +1,6 @@
 //
-//  VerbosePlugin.swift
-//  NetworkPlatform
+//  Logger.swift
+//  Utilities
 //
 //  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
 //  Copyright © {% now 'utc', '%Y' %} {{cookiecutter.company_name}}. All rights reserved.
@@ -8,13 +8,7 @@
 
 import Foundation
 
-public enum Logger {
-
-  private static let dateFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-    return formatter
-  }()
+public enum Logger: Sendable {
 
   public static func info(
     _ messages: Any?..., file: String = #file, function: String = #function,
@@ -49,18 +43,16 @@ public enum Logger {
   }
 
   private static func printMessage(
-    _ messages: Any?..., state: String, file: String, function: String,
+    _ messages: [Any?], state: String, file: String, function: String,
     line: Int
   ) {
-    #if RELEASE
-      return
+    #if DEBUG
+      let dateString = Date().formatted(
+        .iso8601.year().month().day().time(includingFractionalSeconds: false))
+      print(
+        "\(dateString) - \(state) \(sourceFileName(file)).\(function):\(line)",
+        messages.map { $0.map { "\($0)" } ?? "nil" }.joined(separator: " "))
     #endif
-
-    let dateString = dateFormatter.string(from: Date())
-    print(
-      "\(dateString) - \(state) \(sourceFileName(file)).\(function):\(line)",
-      messages)
-
   }
 
   private static func sourceFileName(_ filePath: String) -> String {

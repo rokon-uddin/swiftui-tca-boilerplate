@@ -8,6 +8,7 @@
 
 import XCTest
 
+@MainActor
 class {{cookiecutter.app_name}}UITests: XCTestCase {
 
   override func setUpWithError() throws {

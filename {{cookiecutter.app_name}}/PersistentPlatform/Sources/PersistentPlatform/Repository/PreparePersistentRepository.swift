@@ -17,16 +17,14 @@ public struct PreparePersistentRepository: Domain.PrepareRepository {
     self.persistenceController = persistenceController
   }
 
-  public func prepare() async {
-    do {
-      try await persistenceController.prepare()
-    } catch {
-      fatalError(error.localizedDescription)
-    }
+  public func prepare() async throws {
+    try await persistenceController.prepare()
   }
 }
 
 extension PreparePersistentRepository {
-  public static var live = PreparePersistentRepository(
+  public static let live = PreparePersistentRepository(
     persistenceController: PersistenceController.shared)
+  public static let stubbed = PreparePersistentRepository(
+    persistenceController: PersistenceController.inMemory)
 }

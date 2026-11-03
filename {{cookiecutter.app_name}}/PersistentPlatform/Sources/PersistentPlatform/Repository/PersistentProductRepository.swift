@@ -1,5 +1,5 @@
 //
-//  PersistentRepository.swift
+//  PersistentProductRepository.swift
 //  PersistentPlatform
 //
 //  Created by {{cookiecutter.creator}} on {% now 'utc', '%d/%m/%Y' %}.
@@ -8,38 +8,37 @@
 
 import Domain
 
-public struct PersistentProductRepository: Domain.PersistentProductRepository {
+public struct PersistentProductRepository: Domain.PersistentProductRepository,
+  Domain.ObservableProductRepository
+{
 
   private let persistenceController: PersistenceController
 
-  private init(persistenceController: PersistenceController) {
+  init(persistenceController: PersistenceController) {
     self.persistenceController = persistenceController
   }
 
   public func create(input: Domain.Product) async throws {
-    await persistenceController.update(
-      entityType: Product.self, createIfNil: true
-    ) {
-      $0?.id = "\(input.id)"
-      $0?.title = input.title
-      $0?.price = input.price
-      $0?.image = input.image
-      //FIXME: may be rating is a reserved keyword.
-      //            $0?.rating = product.rating.toManagedObject(in: persistenceController.container.newBackgroundContext())
-      $0?.category = input.category
-      $0?.productDescription = input.description
-    }
+    try await persistenceController.save(product: input)
   }
 
   public func read(input: Int) async throws -> Domain.Product? {
-    await persistenceController.fetchDomainObject(entityType: Product.self)
+    try await persistenceController.product(id: input)
   }
 
+  public func observe() async -> AsyncStream<[Domain.Product]> {
+    await persistenceController.observeProducts()
+  }
 }
 
 extension PersistentProductRepository {
-  public static var live = PersistentProductRepository(
+  public static let live = PersistentProductRepository(
     persistenceController: PersistenceController.shared)
-  public static var stubbed = PersistentProductRepository(
-    persistenceController: PersistenceController.shared)
+  /// Backed by an in-memory store; nothing is written to disk.
+  public static let stubbed = PersistentProductRepository(
+    persistenceController: PersistenceController.inMemory)
+}
+
+extension PersistenceController {
+  static let inMemory = PersistenceController(inMemory: true)
 }

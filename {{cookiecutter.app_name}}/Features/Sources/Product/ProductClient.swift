@@ -12,43 +12,41 @@ import Foundation
 import NetworkPlatform
 import PersistentPlatform
 
-struct ProductClient {
+struct ProductClient: Sendable {
+  var prepareCoreData: any PrepareCoreDataUseCaseType
   var getProduct: any ProductUseCaseType
   var saveProduct: any SaveProductUseCaseType
-  var prepareCoreData: any PrepareCoreDataUseCaseType
-
-  init(
-    _ prepare: PrepareCoreDataUseCase,
-    getProductUseCase: ProductUseCase,
-    saveProductUseCase: SaveProductUseCase
-  ) {
-    self.prepareCoreData = prepare
-    self.getProduct = getProductUseCase
-    self.saveProduct = saveProductUseCase
-  }
+  var observeProducts: any ObserveProductsUseCaseType
+  var observeReachability: any ObserveReachabilityUseCaseType
+  var observeNetworkActivity: any ObserveNetworkActivityUseCaseType
 }
 
 extension DependencyValues {
-  var appClient: ProductClient {
+  var productClient: ProductClient {
     get { self[ProductClient.self] }
     set { self[ProductClient.self] = newValue }
   }
 }
 
 extension ProductClient: DependencyKey {
-  public static var liveValue = ProductClient(
-    PrepareCoreDataUseCase(repository: PreparePersistentRepository.live),
-    getProductUseCase: ProductUseCase(repository: RemoteProductRepository.live),
-    saveProductUseCase: SaveProductUseCase(
-      repository: PersistentProductRepository.live))
-  public static var testValue = ProductClient(
-    PrepareCoreDataUseCase(repository: PreparePersistentRepository.live),
-    getProductUseCase: ProductUseCase(repository: RemoteProductRepository.stubbed),
-    saveProductUseCase: SaveProductUseCase(
-      repository: PersistentProductRepository.live))
-  public static var previewValue = ProductClient(
-    PrepareCoreDataUseCase(repository: PreparePersistentRepository.live),
-    getProductUseCase: ProductUseCase(repository: RemoteProductRepository.stubbed),
-    saveProductUseCase: SaveProductUseCase(
-      repository: PersistentProductRepository.live))
+  static let liveValue = ProductClient(
+    prepareCoreData: PrepareCoreDataUseCase(repository: PreparePersistentRepository.live),
+    getProduct: ProductUseCase(repository: RemoteProductRepository.live),
+    saveProduct: SaveProductUseCase(repository: PersistentProductRepository.live),
+    observeProducts: ObserveProductsUseCase(repository: PersistentProductRepository.live),
+    observeReachability: ObserveReachabilityUseCase(repository: ReachabilityRepository.live),
+    observeNetworkActivity: ObserveNetworkActivityUseCase(
+      repository: NetworkActivityRepository.live))
+
+  /// Stubbed network responses and an in-memory store.
+  static let testValue = ProductClient(
+    prepareCoreData: PrepareCoreDataUseCase(repository: PreparePersistentRepository.stubbed),
+    getProduct: ProductUseCase(repository: RemoteProductRepository.stubbed),
+    saveProduct: SaveProductUseCase(repository: PersistentProductRepository.stubbed),
+    observeProducts: ObserveProductsUseCase(repository: PersistentProductRepository.stubbed),
+    observeReachability: ObserveReachabilityUseCase(repository: ReachabilityRepository.online),
+    observeNetworkActivity: ObserveNetworkActivityUseCase(
+      repository: NetworkActivityRepository.live))
+
+  static let previewValue = testValue
 }

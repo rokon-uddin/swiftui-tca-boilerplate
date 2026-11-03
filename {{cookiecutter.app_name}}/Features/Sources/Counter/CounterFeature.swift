@@ -15,23 +15,25 @@ public struct Counter: FeatureReducer {
   public init() {}
 
   @ObservableState
-  public struct State: Equatable, Hashable {
-    public init() {}
+  public struct State: Equatable, Hashable, Sendable {
+    public init(count: Int = 0) {
+      self.count = count
+    }
 
-    var count = 0
+    var count: Int
   }
 
-  public enum ViewAction {
+  public enum ViewAction: Sendable {
     case decrementButtonTapped
     case incrementButtonTapped
     case closeButtonTapped
   }
 
-  public enum InternalAction {
+  public enum InternalAction: Sendable {
     case close
   }
 
-  public enum DelegateAction {
+  public enum DelegateAction: Sendable {
     case close
   }
 

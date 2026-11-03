@@ -8,6 +8,7 @@
 
 import XCTest
 
+@MainActor
 class {{cookiecutter.app_name}}UITestsLaunchTests: XCTestCase {
 
   override class var runsForEachTargetApplicationUIConfiguration: Bool {

@@ -1,7 +1,8 @@
 ## iOS Project Boilerplate for SwiftUI
-[![IDE](https://img.shields.io/badge/Xcode-15-blue.svg)](https://developer.apple.com/xcode/)
-[![Language](https://img.shields.io/badge/swift-5.9-orange.svg)](https://swift.org)
-[![Platform](https://img.shields.io/badge/iOS-16-green.svg)](https://developer.apple.com/ios/)
+[![IDE](https://img.shields.io/badge/Xcode-26+-blue.svg)](https://developer.apple.com/xcode/)
+[![Language](https://img.shields.io/badge/swift-6.2-orange.svg)](https://swift.org)
+[![Platform](https://img.shields.io/badge/iOS-17+-green.svg)](https://developer.apple.com/ios/)
+[![TCA](https://img.shields.io/badge/TCA-1.26-purple.svg)](https://github.com/pointfreeco/swift-composable-architecture)
 [![Build Status](https://github.com/rokon-uddin/swiftui-tca-boilerplate/actions/workflows/build.yml/badge.svg)](https://github.com/rokon-uddin/swiftui-tca-boilerplate/actions/workflows/build.yml)
 
 
@@ -13,10 +14,11 @@ Accelerate your iOS/macOS development by eliminating repetitive setup tasks and 
 
 
 ## Best practices
-* [Composable Architecture](https://github.com/pointfreeco/swift-composable-architecture): Robust, scalable state management with SwiftUI friendly patterns.
+* [Composable Architecture](https://github.com/pointfreeco/swift-composable-architecture) 1.26: Robust, scalable state management with SwiftUI friendly patterns, using native Observation (`@ObservableState`, `@Bindable`).
+* **Swift 6 strict concurrency:** Every module builds in the Swift 6 language mode with complete data-race checking. See [Concurrency model](#concurrency-model).
 * [R.swift](https://github.com/mac-cain13/R.swift): Get strong typed, autocompleted resources like images, fonts and segues in Swift projects.
 * [Standard gitignore](https://github.com/github/gitignore/blob/master/Swift.gitignore): Keep your repository clean and focused.
-* [Moya](https://github.com/Moya/Moya): Streamlined networking layer with clear abstraction.
+* **Native networking:** A small `async`/`await` HTTP client on `URLSession`, with no third-party networking dependency. Endpoints are plain `Sendable` values, and a swappable transport serves bundled JSON stubs for tests and previews.
 * [Swift-Format](https://github.com/apple/swift-format): Enforce consistent code style for maintainability.
 * **App Flavors:** (Development, Staging, Production): Separate configurations for different environments.
 * **Build Configuration per Flavor:** Fine-grained control over build settings.
@@ -54,6 +56,29 @@ The boilerplate is structured using a Clean Architecture to promote modularity, 
 	* Data Mapping: Translates data between the format used by the data source and the domain models.
 	* Repository Implementations: Provides concrete implementations of the repository protocols, defining how data is actually retrieved or stored.
 	
+## Concurrency model
+All packages and the app target build in the **Swift 6 language mode** (complete strict concurrency checking).
+
+* **Sendable domain:** Entities, errors, use cases and repository protocols are `Sendable`. Use cases are structs that hold `@Sendable` closures.
+* **Actors own mutable state:**
+  * `PersistenceController` is an actor that owns the Core Data stack. All work runs in `context.perform` on a private background context, and only `Sendable` domain structs leave the actor.
+  * `TokenRefresher` is an actor that runs at most one token refresh at a time, even when several requests get a `401` concurrently.
+  * `AsyncBroadcaster` is an actor that fans values out to many `AsyncStream` subscribers.
+* **AsyncStream:** Long-lived data is exposed as `AsyncStream`s:
+  * network reachability (`NWPathMonitor`)
+  * network request activity (drives the loading indicator)
+  * saved products (Core Data change stream)
+
+  `ProductFeature` consumes them in `Effect.run` loops started from the view's `.task`, so they are cancelled automatically when the view disappears.
+* **@MainActor UI:** Views and the `Store` live on the main actor. The app's `Store` is created once, as a `static let` on the `App`.
+
+## Testing
+Each package has its own test target using [Swift Testing](https://developer.apple.com/documentation/testing). Reducers are tested with TCA's `TestStore`, and the streams in those tests are driven by hand so they are deterministic.
+
+```
+swift test --package-path Features
+```
+
 ###Additional Features (ToDo in the boilerplate)
 
 * Deeplink handling base classes
@@ -61,11 +86,12 @@ The boilerplate is structured using a Clean Architecture to promote modularity, 
 * Integration with analytics and crash reporting tools
 
 ### Supporting Tools
-Xcode 14.0 or later and Swift 5.5 or later.
+Xcode 26 or later and Swift 6.2 or later.
 
 ### Prerequisites
-* Xcode 14.0 or later
-* Swift 5.5 or later
+* Xcode 26 or later
+* Swift 6.2 or later
+* iOS 17 / macOS 14 deployment target
 * [Cookiecutter](https://cookiecutter.readthedocs.io/en/latest/installation.html)
 
 Install cookiecutter by runing below terminal command.

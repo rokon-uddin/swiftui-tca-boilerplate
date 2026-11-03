@@ -8,7 +8,7 @@
 
 import Foundation
 
-public struct ResponseWrapper<Value: Decodable>: Decodable {
+public struct ResponseWrapper<Value: Decodable & Sendable>: Decodable, Sendable {
   let response: Value
 
   public var value: Value {
@@ -16,10 +16,10 @@ public struct ResponseWrapper<Value: Decodable>: Decodable {
   }
 }
 
-public enum AppError: Error, Identifiable {
+public enum AppError: Error, Identifiable, Sendable {
 
-  public struct MiddlewareAPIError: Decodable, LocalizedError {
-    public struct Header: Decodable {
+  public struct MiddlewareAPIError: Decodable, LocalizedError, Sendable {
+    public struct Header: Decodable, Sendable {
       public let system_timestamp: Date
       public let api_ver: String
     }
@@ -35,7 +35,7 @@ public enum AppError: Error, Identifiable {
     }
   }
 
-  public struct WebsiteAPIError: Decodable, LocalizedError {
+  public struct WebsiteAPIError: Decodable, LocalizedError, Sendable {
     let error_code: String
     let status_code: Int
     let message: String
@@ -51,12 +51,20 @@ public enum AppError: Error, Identifiable {
   case middleWareAPIError(MiddlewareAPIError)
   case websiteAPIError(WebsiteAPIError)
   case networkingFailed(
-    underlyingError: Error, context: String, file: StaticString = #file,
+    underlyingError: any Error, context: String, file: StaticString = #file,
     line: Int = #line)
+  case httpStatus(code: Int)
+  case unauthorized
   case parseFailed
   case noUpdates
   case notFound
   case unknown
+}
+
+extension AppError: Equatable {
+  public static func == (lhs: AppError, rhs: AppError) -> Bool {
+    lhs.id == rhs.id
+  }
 }
 
 extension AppError: LocalizedError {
@@ -77,6 +85,10 @@ extension AppError: LocalizedError {
       return error.localizedDescription
     case let .websiteAPIError(error):
       return error.localizedDescription
+    case let .httpStatus(code):
+      return "HTTP Error \(code)"
+    case .unauthorized:
+      return "Unauthorized"
     case .parseFailed:
       return "Parse Error"
     case .noUpdates:
