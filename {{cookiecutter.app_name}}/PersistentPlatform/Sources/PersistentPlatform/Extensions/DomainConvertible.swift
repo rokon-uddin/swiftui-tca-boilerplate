@@ -10,29 +10,31 @@ import CoreData
 import Domain
 import Foundation
 
+/// Converts a managed object into a `Sendable` domain value.
+///
+/// Conversion must happen on the managed object context's queue (inside
+/// `context.perform`) so the result can safely leave it.
 public protocol DomainConvertible {
   associatedtype DomainType
-  func asDomain(context: NSManagedObjectContext) -> DomainType
+  func asDomain() -> DomainType
 }
 
 extension Array: DomainConvertible where Element: DomainConvertible {
-  public func asDomain(context: NSManagedObjectContext) -> [Element.DomainType]
-  {
-    self.map { $0.asDomain(context: context) }
+  public func asDomain() -> [Element.DomainType] {
+    self.map { $0.asDomain() }
   }
 }
 
 extension Set: DomainConvertible where Element: DomainConvertible {
-  public func asDomain(context: NSManagedObjectContext) -> [Element.DomainType]
-  {
-    self.map { $0.asDomain(context: context) }
+  public func asDomain() -> [Element.DomainType] {
+    self.map { $0.asDomain() }
   }
 }
 
 extension NSOrderedSet {
   func asDomain<DomainElement, EntityType: DomainConvertible>(
-    context: NSManagedObjectContext, entityElementType: EntityType.Type
+    entityElementType: EntityType.Type
   ) -> [DomainElement] where EntityType.DomainType == DomainElement {
-    return self.compactMap { ($0 as? EntityType)?.asDomain(context: context) }
+    self.compactMap { ($0 as? EntityType)?.asDomain() }
   }
 }
